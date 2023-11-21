@@ -5,6 +5,23 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 import re
 
 app = Flask(__name__)
+# Fungsi untuk membaca konten dari file PDF
+def read_pdf(file_path):
+    pdf = PdfReader(file_path)
+    text = ''
+    for page in pdf.pages:
+        text += page.extract_text()
+    return text
+
+# Endpoint GET untuk membaca dan mengembalikan data dari file PDF
+@app.route('/get_data', methods=['GET'])
+def get_pdf_data():
+    file_path = 'mycv.pdf' 
+    pdf_content = read_pdf(file_path)
+    response_data = {'pdf_content': pdf_content}
+
+    return jsonify(response_data)
+
 def cleanResume(txt):
     cleanText = re.sub('http\S+\s', ' ', txt)
     cleanText = re.sub('RT|cc', ' ', cleanText)
@@ -49,7 +66,7 @@ category_mapping = {
     5: "Civil Engineer",
     0: "Advocate",
 }
-
+# endpoint POST untuk melakukan prediksi category
 @app.route('/predict_category', methods=['POST'])
 def predict_category():
     data = request.files['file']
@@ -59,17 +76,41 @@ def predict_category():
     for page in pdf.pages:
         resume_text += page.extract_text()
 
-    # Clean the input resume
     cleaned_resume = cleanResume(resume_text)
 
-    # Transform the cleaned resume using the trained TfidfVectorizer
     input_features = tfidf.transform([cleaned_resume])
 
-    # Make the prediction using the loaded classifier
     prediction_id = clf.predict(input_features)[0]
     category_name = category_mapping.get(prediction_id, "Unknown")
 
     return jsonify({'predicted_category': category_name})
+
+
+with open('model/score/tfidf_vectorizer.pkl', 'rb') as tfidf_file:
+    tfidf = pickle.load(tfidf_file)
+
+with open('model/score/regressor_model.pkl', 'rb') as regressor_file:
+    regressor = pickle.load(regressor_file)
+
+# endpoint POST untuk melakukan prediksi score
+@app.route('/predict_score', methods=['POST'])
+def predict():
+    data = request.files['file']
+    pdf = PdfReader(data)
+    
+    score_text = ''
+    for page in pdf.pages:
+        score_text += page.extract_text()
+
+        cleaned_cv_text = cleanResume(score_text)
+        cv_tfidf = tfidf.transform([cleaned_cv_text])
+        prediction_cv = regressor.predict(cv_tfidf)
+
+        max_possible_score = 20
+        predicted_percentage = (prediction_cv / max_possible_score) * 100
+        predicted_percentage = int(predicted_percentage)
+
+        return jsonify({'predicted_percentage': predicted_percentage})
 
 if __name__ == '__main__':
     app.run(debug=True)
